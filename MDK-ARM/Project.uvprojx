@@ -488,6 +488,16 @@
               <FileType>1</FileType>
               <FilePath>..\module\lcd1602.c</FilePath>
             </File>
+            <File>
+              <FileName>bme280.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\module\bme280.c</FilePath>
+            </File>
+            <File>
+              <FileName>iic.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\module\iic.c</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>

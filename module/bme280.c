@@ -1,5 +1,11 @@
-#define BME280_ADDRESS 0x76
+#include "bme280.h"
+#include "iic.h"
 
+typedef unsigned short uint16_t;
+typedef short int16_t;
+typedef unsigned char uint8_t;
+
+#define BME280_ADDRESS 0xEC
 unsigned long int hum_raw,temp_raw,pres_raw;
 signed long int t_fine;
 
@@ -22,7 +28,65 @@ uint16_t dig_P1;
  int16_t dig_H5;
  int8_t  dig_H6;
 
-void setup()
+struct{
+	void (*begin)(void);
+	void (*beginTransmission)(u8);
+	void (*write)(u8);
+	void (*endTransmission)(void);
+	void (*requestFrom)(u8,int);
+	u8 (*available)(void);
+	u8 (*read)(void);
+	int n;
+}Wire;
+
+void readTrim(void);
+void writeReg(uint8_t reg_address, uint8_t data);
+void readData(void);
+signed long int calibration_T(signed long int adc_T);
+unsigned long int calibration_P(signed long int adc_P);
+unsigned long int calibration_H(signed long int adc_H);
+
+void _Wire_beginTransmission(u8 address){
+	IIC_Start();
+	IIC_Send_Byte(address);
+	IIC_Wait_Ack();
+}
+
+void _Wire_write(u8 data){
+	IIC_Send_Byte(data);
+	IIC_Wait_Ack();
+}
+
+void _Wire_endTransmission(){
+	IIC_Stop();
+}
+
+void _Wire_requestFrom(u8 address,int n){
+	Wire.n=n;
+	IIC_Start();
+	IIC_Send_Byte(address|1);
+	IIC_Wait_Ack();
+}
+
+u8 _Wire_available(){
+	return Wire.n>0;
+}
+
+u8 _Wire_read(){
+	u8 data;
+	if(Wire.n>1){
+		data=IIC_Read_Byte(1);
+	}else{
+		data=IIC_Read_Byte(0);
+	}
+	Wire.n--;
+	if(!Wire.n){
+		IIC_Stop();
+	}
+	return data;
+}
+
+void bme280_setup()
 {
     uint8_t osrs_t = 1;             //Temperature oversampling x 1
     uint8_t osrs_p = 1;             //Pressure oversampling x 1
@@ -36,7 +100,15 @@ void setup()
     uint8_t config_reg    = (t_sb << 5) | (filter << 2) | spi3w_en;
     uint8_t ctrl_hum_reg  = osrs_h;
     
-    Serial.begin(9600);
+	Wire.begin=IIC_Init;
+	Wire.beginTransmission=_Wire_beginTransmission;
+	Wire.write=_Wire_write;
+	Wire.endTransmission=_Wire_endTransmission;
+	Wire.requestFrom=_Wire_requestFrom;
+	Wire.available=_Wire_available;
+	Wire.read=_Wire_read;
+	Wire.n=0;
+	
     Wire.begin();
     
     writeReg(0xF2,ctrl_hum_reg);
@@ -46,9 +118,9 @@ void setup()
 }
 
 
-void loop()
+void getdata(double *temp_act,double *press_act,double *hum_act)
 {
-    double temp_act = 0.0, press_act = 0.0,hum_act=0.0;
+    // double temp_act = 0.0, press_act = 0.0,hum_act=0.0;
     signed long int temp_cal;
     unsigned long int press_cal,hum_cal;
     
@@ -57,18 +129,9 @@ void loop()
     temp_cal = calibration_T(temp_raw);
     press_cal = calibration_P(pres_raw);
     hum_cal = calibration_H(hum_raw);
-    temp_act = (double)temp_cal / 100.0;
-    press_act = (double)press_cal / 100.0;
-    hum_act = (double)hum_cal / 1024.0;
-    Serial.print("TEMP : ");
-    Serial.print(temp_act);
-    Serial.print(" DegC  PRESS : ");
-    Serial.print(press_act);
-    Serial.print(" hPa  HUM : ");
-    Serial.print(hum_act);
-    Serial.println(" %");    
-    
-    delay(1000);
+    *temp_act = (double)temp_cal / 100.0;
+    *press_act = (double)press_cal;
+    *hum_act = (double)hum_cal / 1024.0;
 }
 void readTrim()
 {
@@ -95,7 +158,7 @@ void readTrim()
     Wire.requestFrom(BME280_ADDRESS,7);
     while(Wire.available()){
         data[i] = Wire.read();
-        i++;    
+        i++;
     }
     dig_T1 = (data[1] << 8) | data[0];
     dig_T2 = (data[3] << 8) | data[2];
@@ -124,7 +187,6 @@ void writeReg(uint8_t reg_address, uint8_t data)
     Wire.endTransmission();    
 }
 
-
 void readData()
 {
     int i = 0;
@@ -141,7 +203,6 @@ void readData()
     temp_raw = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
     hum_raw  = (data[6] << 8) | data[7];
 }
-
 
 signed long int calibration_T(signed long int adc_T)
 {
